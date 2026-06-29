@@ -14,6 +14,9 @@
 
 """Tools for running realtime reports using the Data API."""
 
+
+import json
+import os
 from typing import Any, Dict, List
 
 from analytics_mcp.coordinator import mcp
@@ -131,6 +134,33 @@ async def run_realtime_report(
           https://developers.google.com/analytics/devguides/reporting/data/v1/basics#pagination.
         return_property_quota: Whether to return realtime property quota in the response.
     """
+    # Validate dimensions and metrics against cached schema
+    cache_dir = "schema_cache"
+    file_path = os.path.join(cache_dir, f"ga4_schema_{property_id}.json")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(
+            f"Schema cache file not found for property {property_id}. "
+            f"Please run the 'cache_ga4_schema' tool first."
+        )
+
+    with open(file_path, "r") as f:
+        schema = json.load(f)
+
+    valid_dimensions = [item["API Name"] for item in schema["standard"] if "API Name" in item] + [
+        item["parameterName"] for item in schema["custom"]
+    ]
+    valid_metrics = [item["API Name"] for item in schema["standard"] if "API Name" in item] + [
+        item["parameterName"] for item in schema["custom"]
+    ]
+
+    for dimension in dimensions:
+        if dimension not in valid_dimensions:
+            raise ValueError(f"Invalid dimension: {dimension}")
+
+    for metric in metrics:
+        if metric not in valid_metrics:
+            raise ValueError(f"Invalid metric: {metric}")
+
     request = data_v1beta.RunRealtimeReportRequest(
         property=construct_property_rn(property_id),
         dimensions=[
@@ -160,6 +190,7 @@ async def run_realtime_report(
 
     response = await create_data_api_client().run_realtime_report(request)
     return proto_to_dict(response)
+
 
 
 # The `run_realtime_report` tool requires a more complex description that's generated at
